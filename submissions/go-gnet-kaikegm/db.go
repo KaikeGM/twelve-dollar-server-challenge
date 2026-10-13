@@ -65,10 +65,6 @@ static int q_like(sqlite3_stmt *s_like, sqlite3_stmt *s_exists, sqlite3_int64 ui
 static int prep(sqlite3 *db, const char *sql, sqlite3_stmt **s) {
 	return sqlite3_prepare_v3(db, sql, -1, SQLITE_PREPARE_PERSISTENT, s, 0);
 }
-
-static void bg_checkpoint(sqlite3 *db) {
-	sqlite3_wal_checkpoint_v2(db, NULL, SQLITE_CHECKPOINT_PASSIVE, NULL, NULL);
-}
 */
 import "C"
 
@@ -76,7 +72,6 @@ import (
 	"errors"
 	"log"
 	"slices"
-	"time"
 	"unsafe"
 )
 
@@ -130,21 +125,6 @@ func dbOpen(path string) {
 		if rc != C.SQLITE_OK {
 			log.Fatal("prepare: ", dbErr())
 		}
-	}
-
-	// Separate connection for background passive WAL checkpointing:
-	// Runs on its own handle so the event loop never locks or waits!
-	var chkDB *C.sqlite3
-	if C.sqlite3_open_v2(cpath, &chkDB, C.SQLITE_OPEN_READWRITE|C.SQLITE_OPEN_NOMUTEX, nil) == C.SQLITE_OK {
-		go func() {
-			ticker := time.NewTicker(2 * time.Second)
-			defer ticker.Stop()
-			for range ticker.C {
-				if chkDB != nil {
-					C.bg_checkpoint(chkDB)
-				}
-			}
-		}()
 	}
 }
 

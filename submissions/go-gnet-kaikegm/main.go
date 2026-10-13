@@ -216,9 +216,9 @@ func appendPost(b []byte, id int64, body, created, author []byte, likes int64) [
 	b = appendJSONString(b, body)
 	b = append(b, `,"created_at":"`...)
 	b = append(b, created...)
-	b = append(b, `","author":"`...)
-	b = append(b, author...)
-	b = append(b, `","like_count":`...)
+	b = append(b, `","author":`...)
+	b = appendJSONString(b, author)
+	b = append(b, `,"like_count":`...)
 	b = strconv.AppendInt(b, likes, 10)
 	return append(b, '}')
 }
