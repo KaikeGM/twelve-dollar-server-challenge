@@ -245,7 +245,14 @@ func nextJSONProp(b []byte) (key, val []byte, isStr bool, rest []byte, ok bool) 
 	}
 	i++
 	kStart := i
-	for i < n && b[i] != '"' {
+	for i < n {
+		if b[i] == '\\' {
+			i += 2
+			continue
+		}
+		if b[i] == '"' {
+			break
+		}
 		i++
 	}
 	if i >= n {
@@ -384,6 +391,13 @@ func unescapeJSON(s []byte) []byte {
 				s[w] = '\r'
 			case 't':
 				s[w] = '\t'
+			case 'u':
+				if r+4 < len(s) && s[r+1] == '0' && s[r+2] == '0' && s[r+3] == '2' && s[r+4] == '2' {
+					s[w] = '"'
+					r += 4
+				} else {
+					s[w] = s[r]
+				}
 			default:
 				s[w] = s[r]
 			}
