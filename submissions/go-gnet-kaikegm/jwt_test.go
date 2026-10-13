@@ -106,6 +106,13 @@ func TestJWT(t *testing.T) {
 	if parsed["author"] != `ev"il` {
 		t.Fatalf("expected parsed author to be ev\"il, got: %v", parsed["author"])
 	}
+
+	// 11. Unicode quote escaping \u0022 and escaped quote in keys
+	unicodeTok := []byte(signJWT(fmt.Sprintf(`{"sub":"888","extra\"key":"test","username":"ev\u0022il","exp":%d}`, now+3600), secret))
+	uid, unicodeUser, ok, plOK := verifyJWT(unicodeTok, now)
+	if !ok || !plOK || uid != 888 || string(unicodeUser) != `ev"il` {
+		t.Fatalf("expected unicode escaped quote token to pass, got uid=%d user=%s ok=%v plOK=%v", uid, unicodeUser, ok, plOK)
+	}
 }
 
 func BenchmarkVerifyJWT(b *testing.B) {
