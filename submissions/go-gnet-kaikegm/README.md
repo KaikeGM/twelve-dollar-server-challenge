@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Language | Go (>= 1.23, built with Profile-Guided Optimization `default.pgo`) |
+| Language | Go 1.27+ (built with Profile-Guided Optimization `default.pgo`) |
 | Framework | [`gnet`](https://github.com/panjf2000/gnet) v2.10.0 (epoll event loop) |
 | Server | Zero-alloc HTTP/1.1 keep-alive parser and pipeline on top of gnet |
 | SQLite driver | In-process CGO binding to pinned SQLite 3.53.4 amalgamation compiled with `-O3 -DNDEBUG` |
