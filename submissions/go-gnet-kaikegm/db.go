@@ -204,7 +204,7 @@ const (
 	existsSQL = "SELECT 1 FROM posts WHERE id = ?"
 	insertSQL = "INSERT INTO posts (user_id, body) VALUES (?, ?) RETURNING id, created_at"
 	likeSQL   = "INSERT INTO likes (user_id, post_id) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM posts WHERE id = ?) ON CONFLICT DO NOTHING"
-	pragmas   = "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=10000; PRAGMA journal_size_limit=67108864; PRAGMA busy_timeout=5000; PRAGMA mmap_size=1073741824; PRAGMA cache_size=-65536; PRAGMA temp_store=MEMORY; PRAGMA automatic_index=0; PRAGMA threads=0; PRAGMA cell_size_check=0; PRAGMA foreign_keys=OFF; PRAGMA secure_delete=0;"
+	pragmas   = "PRAGMA locking_mode=EXCLUSIVE; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=10000; PRAGMA journal_size_limit=67108864; PRAGMA busy_timeout=5000; PRAGMA mmap_size=1073741824; PRAGMA cache_size=-16384; PRAGMA temp_store=MEMORY; PRAGMA automatic_index=0; PRAGMA threads=0; PRAGMA cell_size_check=0; PRAGMA foreign_keys=OFF; PRAGMA secure_delete=0;"
 )
 
 var (
