@@ -24,8 +24,6 @@ func listen(addr string) error {
 		gnet.WithReusePort(false),
 		gnet.WithReuseAddr(true),
 		gnet.WithLockOSThread(true),
-		gnet.WithSocketRecvBuffer(1024*1024),
-		gnet.WithSocketSendBuffer(1024*1024),
 	)
 }
 
