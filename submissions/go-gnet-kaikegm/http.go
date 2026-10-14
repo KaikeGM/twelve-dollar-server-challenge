@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"strconv"
+	"time"
 
 	"github.com/panjf2000/gnet/v2"
 )
@@ -21,6 +22,7 @@ func listen(addr string) error {
 	return gnet.Run(srv, "tcp://"+addr,
 		gnet.WithMulticore(false),
 		gnet.WithTCPNoDelay(gnet.TCPNoDelay),
+		gnet.WithTCPKeepAlive(65*time.Second),
 		gnet.WithReusePort(false),
 		gnet.WithReuseAddr(true),
 		gnet.WithLockOSThread(true),
@@ -66,7 +68,9 @@ func (s *httpServer) OnTraffic(c gnet.Conn) gnet.Action {
 		s.out = appendResponse(s.out, status, s.body, closeConn)
 	}
 
-	c.Discard(used)
+	if used > 0 {
+		c.Discard(used)
+	}
 	if len(s.out) > 0 {
 		c.Write(s.out)
 	}
@@ -146,12 +150,14 @@ func parseRequest(b []byte) (r request, n int) {
 		return r, 0
 	}
 	head := b[:end]
-	lineEnd := bytes.IndexByte(head, '\r')
+	lineEnd := bytes.Index(head, crlf)
+	var line, rest []byte
 	if lineEnd < 0 {
-		return r, -1
+		line = head
+	} else {
+		line = head[:lineEnd]
+		rest = head[lineEnd+2:]
 	}
-	line := head[:lineEnd]
-	rest := head[lineEnd+2:]
 
 	sp1 := bytes.IndexByte(line, ' ')
 	if sp1 < 0 {
@@ -176,7 +182,7 @@ func parseRequest(b []byte) (r request, n int) {
 	r.close = len(proto) == 8 && string(proto) == "HTTP/1.0"
 	clen := 0
 	for len(rest) > 0 {
-		hEnd := bytes.IndexByte(rest, '\r')
+		hEnd := bytes.Index(rest, crlf)
 		var h []byte
 		if hEnd < 0 {
 			h = rest

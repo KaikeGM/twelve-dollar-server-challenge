@@ -6,31 +6,21 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"hash"
-	"sync"
 	"time"
 )
 
 var (
 	jwtSecret      []byte
+	jwtMAC         hash.Hash
 	dotByte        = []byte(".")
 	sigScratch     [32]byte
 	payloadScratch [1024]byte
 	hdrScratch     [128]byte
-
-	hmacPool = sync.Pool{
-		New: func() any {
-			return hmac.New(sha256.New, jwtSecret)
-		},
-	}
 )
 
 func setJWTSecret(secret []byte) {
 	jwtSecret = secret
-	hmacPool = sync.Pool{
-		New: func() any {
-			return hmac.New(sha256.New, jwtSecret)
-		},
-	}
+	jwtMAC = hmac.New(sha256.New, jwtSecret)
 }
 
 func authenticate(authHeader []byte) (uid int64, username []byte, status int, msg string) {
@@ -84,14 +74,12 @@ func verifyJWT(tok []byte, now int64) (uid int64, username []byte, ok, payloadOK
 		return 0, nil, false, false
 	}
 
-	// 3. Verify HMAC signature using pooled hasher
-	mac := hmacPool.Get().(hash.Hash)
-	mac.Reset()
-	_, _ = mac.Write(hBytes)
-	_, _ = mac.Write(dotByte)
-	_, _ = mac.Write(pBytes)
-	calculated := mac.Sum(sigScratch[:0])
-	hmacPool.Put(mac)
+	// 3. Verify HMAC signature using the single-threaded preallocated hasher
+	jwtMAC.Reset()
+	_, _ = jwtMAC.Write(hBytes)
+	_, _ = jwtMAC.Write(dotByte)
+	_, _ = jwtMAC.Write(pBytes)
+	calculated := jwtMAC.Sum(sigScratch[:0])
 
 	if !hmac.Equal(sigBuf[:32], calculated) {
 		return 0, nil, false, false

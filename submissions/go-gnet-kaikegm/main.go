@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+	"unsafe"
 )
 
 var start = time.Now()
@@ -128,21 +129,20 @@ func createPost(auth, reqBody, out []byte) (int, []byte) {
 		return fail(out, status, msg)
 	}
 
-	// 2. Body validation (check valid JSON first without map allocation)
-	if !json.Valid(reqBody) {
-		return fail(out, 400, "malformed JSON body")
-	}
+	// 2. Single-pass JSON body unmarshaling (only runs json.Valid on error)
 	var in struct {
-		Body any `json:"body"`
+		Body *string `json:"body"`
 	}
-	if json.Unmarshal(reqBody, &in) != nil || in.Body == nil {
+	if err := json.Unmarshal(reqBody, &in); err != nil {
+		if !json.Valid(reqBody) {
+			return fail(out, 400, "malformed JSON body")
+		}
 		return fail(out, 400, "body is required")
 	}
-	bodyStr, isStr := in.Body.(string)
-	if !isStr {
+	if in.Body == nil {
 		return fail(out, 400, "body is required")
 	}
-	trimmed := strings.TrimSpace(bodyStr)
+	trimmed := strings.TrimSpace(*in.Body)
 	if trimmed == "" {
 		return fail(out, 400, "body is required")
 	}
@@ -156,7 +156,8 @@ func createPost(auth, reqBody, out []byte) (int, []byte) {
 		return fail(out, 500, "internal server error")
 	}
 
-	out = appendPost(append(out, `{"post":`...), id, []byte(trimmed), []byte(created), username, 0)
+	trimmedBytes := unsafe.Slice(unsafe.StringData(trimmed), len(trimmed))
+	out = appendPost(append(out, `{"post":`...), id, trimmedBytes, created, username, 0)
 	return 201, append(out, '}')
 }
 

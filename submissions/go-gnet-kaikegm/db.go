@@ -7,16 +7,139 @@ package main
 #include <string.h>
 #include "sqlite/sqlite3.h"
 
-// q_text: copies column 0 of the first row into buf. Single CGO call.
-static int q_text(sqlite3_stmt *s, sqlite3_int64 arg, char *buf, int cap, int *n) {
-	if (arg > 0) sqlite3_bind_int64(s, 1, arg);
+static inline char* append_uint(char *p, sqlite3_int64 v) {
+	if (v <= 0) {
+		*p++ = '0';
+		return p;
+	}
+	char tmp[24];
+	int i = 0;
+	while (v > 0) {
+		tmp[i++] = (char)('0' + (v % 10));
+		v /= 10;
+	}
+	while (i > 0) {
+		*p++ = tmp[--i];
+	}
+	return p;
+}
+
+static inline char* append_json_str(char *p, const unsigned char *s, int len) {
+	*p++ = '"';
+	for (int i = 0; i < len; i++) {
+		unsigned char c = s[i];
+		if (c >= 0x20 && c != '"' && c != '\\') {
+			*p++ = (char)c;
+		} else {
+			*p++ = '\\';
+			switch (c) {
+			case '"':
+			case '\\':
+				*p++ = (char)c;
+				break;
+			case '\n':
+				*p++ = 'n';
+				break;
+			case '\r':
+				*p++ = 'r';
+				break;
+			case '\t':
+				*p++ = 't';
+				break;
+			case '\b':
+				*p++ = 'b';
+				break;
+			case '\f':
+				*p++ = 'f';
+				break;
+			default: {
+				static const char hex[] = "0123456789abcdef";
+				*p++ = 'u';
+				*p++ = '0';
+				*p++ = '0';
+				*p++ = hex[c >> 4];
+				*p++ = hex[c & 15];
+				break;
+			}
+			}
+		}
+	}
+	*p++ = '"';
+	return p;
+}
+
+static inline char* append_post_row(char *p, sqlite3_stmt *s) {
+	memcpy(p, "{\"id\":", 6);
+	p += 6;
+	p = append_uint(p, sqlite3_column_int64(s, 0));
+	memcpy(p, ",\"body\":", 8);
+	p += 8;
+	p = append_json_str(p, sqlite3_column_text(s, 1), sqlite3_column_bytes(s, 1));
+	memcpy(p, ",\"created_at\":\"", 15);
+	p += 15;
+	int clen = sqlite3_column_bytes(s, 2);
+	memcpy(p, sqlite3_column_text(s, 2), clen);
+	p += clen;
+	memcpy(p, "\",\"author\":", 11);
+	p += 11;
+	p = append_json_str(p, sqlite3_column_text(s, 3), sqlite3_column_bytes(s, 3));
+	memcpy(p, ",\"like_count\":", 14);
+	p += 14;
+	p = append_uint(p, sqlite3_column_int64(s, 4));
+	*p++ = '}';
+	return p;
+}
+
+// q_feed: iterates up to 20 rows and serializes {"posts":[...]} directly into buf in a single CGO call.
+static int q_feed(sqlite3_stmt *s, char *buf, int cap, int *n) {
+	char *p = buf;
+	memcpy(p, "{\"posts\":[", 10);
+	p += 10;
+	int first = 1;
+	int rc;
+	while ((rc = sqlite3_step(s)) == SQLITE_ROW) {
+		if ((p - buf) + 4096 > cap) {
+			sqlite3_reset(s);
+			*n = cap * 2;
+			return SQLITE_ROW;
+		}
+		if (!first) {
+			*p++ = ',';
+		}
+		first = 0;
+		p = append_post_row(p, s);
+	}
+	*p++ = ']';
+	*p++ = '}';
+	*n = (int)(p - buf);
+	sqlite3_reset(s);
+	return rc;
+}
+
+// q_post: fetches a single post by ID and serializes {"post":{...}} directly into buf in a single CGO call.
+static int q_post(sqlite3_stmt *s, sqlite3_int64 id, char *buf, int cap, int *n) {
+	sqlite3_bind_int64(s, 1, id);
 	int rc = sqlite3_step(s);
 	if (rc == SQLITE_ROW) {
-		const unsigned char *t = sqlite3_column_text(s, 0);
-		int len = sqlite3_column_bytes(s, 0);
-		if (len <= cap) memcpy(buf, t, len);
-		*n = len;
+		if (cap < 4096) {
+			sqlite3_reset(s);
+			*n = 4096;
+			return SQLITE_ROW;
+		}
+		char *p = buf;
+		memcpy(p, "{\"post\":", 8);
+		p += 8;
+		p = append_post_row(p, s);
+		*p++ = '}';
+		*n = (int)(p - buf);
 	}
+	sqlite3_reset(s);
+	return rc;
+}
+
+// q_ping: steps SELECT 1 and resets with zero buffer copies.
+static int q_ping(sqlite3_stmt *s) {
+	int rc = sqlite3_step(s);
 	sqlite3_reset(s);
 	return rc;
 }
@@ -75,22 +198,20 @@ import (
 	"unsafe"
 )
 
-const postObj = `json_object('id', p.id, 'body', p.body, 'created_at', p.created_at, 'author', u.username,
- 'like_count', (SELECT count(1) FROM likes WHERE post_id = p.id))`
-
 const (
-	feedSQL   = `WITH p AS (SELECT id, user_id, body, created_at FROM posts ORDER BY created_at DESC, id DESC LIMIT 20) SELECT '{"posts":[' || coalesce(group_concat(` + postObj + `, ','), '') || ']}' FROM p JOIN users u ON u.id = p.user_id`
-	postSQL   = `SELECT '{"post":' || ` + postObj + ` || '}' FROM posts p JOIN users u ON u.id = p.user_id WHERE p.id = ?`
+	feedSQL   = `SELECT p.id, p.body, p.created_at, u.username, (SELECT count(1) FROM likes WHERE post_id = p.id) FROM posts p CROSS JOIN users u ON u.id = p.user_id ORDER BY p.created_at DESC, p.id DESC LIMIT 20`
+	postSQL   = `SELECT p.id, p.body, p.created_at, u.username, (SELECT count(1) FROM likes WHERE post_id = p.id) FROM posts p CROSS JOIN users u ON u.id = p.user_id WHERE p.id = ?`
 	existsSQL = "SELECT 1 FROM posts WHERE id = ?"
 	insertSQL = "INSERT INTO posts (user_id, body) VALUES (?, ?) RETURNING id, created_at"
 	likeSQL   = "INSERT INTO likes (user_id, post_id) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM posts WHERE id = ?) ON CONFLICT DO NOTHING"
-	pragmas   = "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000; PRAGMA mmap_size=1073741824; PRAGMA cache_size=-2048; PRAGMA temp_store=MEMORY; PRAGMA automatic_index=0; PRAGMA threads=0; PRAGMA cell_size_check=0; PRAGMA foreign_keys=OFF; PRAGMA secure_delete=0;"
+	pragmas   = "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=10000; PRAGMA journal_size_limit=67108864; PRAGMA busy_timeout=5000; PRAGMA mmap_size=1073741824; PRAGMA cache_size=-65536; PRAGMA temp_store=MEMORY; PRAGMA automatic_index=0; PRAGMA threads=0; PRAGMA cell_size_check=0; PRAGMA foreign_keys=OFF; PRAGMA secure_delete=0;"
 )
 
 var (
 	// Main database handle: accessed exclusively by the single-threaded event loop (0 locks, 0 mutex contention!)
 	db                                           *C.sqlite3
 	feedS, postS, existsS, insertS, likeS, pingS *C.sqlite3_stmt
+	createdScratch                               [64]byte
 )
 
 func dbErr() error { return errors.New(C.GoString(C.sqlite3_errmsg(db))) }
@@ -128,50 +249,59 @@ func dbOpen(path string) {
 	}
 }
 
-// text runs a one-column query straight into out's spare capacity (zero locks, zero mutex).
-func text(s *C.sqlite3_stmt, arg int64, out []byte) ([]byte, bool, error) {
+func dbFeed(out []byte) ([]byte, error) {
 	for {
-		if cap(out)-len(out) < 8192 {
-			out = slices.Grow(out, 16<<10)
+		if cap(out)-len(out) < 64<<10 {
+			out = slices.Grow(out, 64<<10)
 		}
 		spare := out[len(out):cap(out)]
 		var n C.int
-		rc := C.q_text(s, C.sqlite3_int64(arg), (*C.char)(unsafe.Pointer(&spare[0])), C.int(len(spare)), &n)
-		switch {
-		case rc == C.SQLITE_DONE:
-			return out, false, nil
-		case rc != C.SQLITE_ROW:
-			return out, false, dbErr()
-		case int(n) > len(spare):
+		rc := C.q_feed(feedS, (*C.char)(unsafe.Pointer(&spare[0])), C.int(len(spare)), &n)
+		if rc == C.SQLITE_ROW && int(n) > len(spare) {
 			out = slices.Grow(out, int(n))
 			continue
 		}
-		return out[:len(out)+int(n)], true, nil
+		if rc != C.SQLITE_DONE {
+			return out, dbErr()
+		}
+		return out[:len(out)+int(n)], nil
 	}
 }
 
-func dbFeed(out []byte) ([]byte, error) {
-	b, _, err := text(feedS, 0, out)
-	return b, err
+func dbPost(out []byte, id int64) ([]byte, bool, error) {
+	if cap(out)-len(out) < 4096 {
+		out = slices.Grow(out, 4096)
+	}
+	spare := out[len(out):cap(out)]
+	var n C.int
+	rc := C.q_post(postS, C.sqlite3_int64(id), (*C.char)(unsafe.Pointer(&spare[0])), C.int(len(spare)), &n)
+	switch rc {
+	case C.SQLITE_DONE:
+		return out, false, nil
+	case C.SQLITE_ROW:
+		return out[:len(out)+int(n)], true, nil
+	default:
+		return out, false, dbErr()
+	}
 }
-
-func dbPost(out []byte, id int64) ([]byte, bool, error) { return text(postS, id, out) }
 
 func dbPing() error {
-	_, _, err := text(pingS, 0, nil)
-	return err
+	rc := C.q_ping(pingS)
+	if rc != C.SQLITE_ROW && rc != C.SQLITE_DONE {
+		return dbErr()
+	}
+	return nil
 }
 
-func dbInsert(uid int64, body string) (int64, string, error) {
+func dbInsert(uid int64, body string) (int64, []byte, error) {
 	var id C.sqlite3_int64
-	var created [64]byte
 	var n C.int
 	rc := C.q_insert(insertS, C.sqlite3_int64(uid), (*C.char)(unsafe.Pointer(unsafe.StringData(body))), C.int(len(body)),
-		&id, (*C.char)(unsafe.Pointer(&created[0])), C.int(len(created)), &n)
+		&id, (*C.char)(unsafe.Pointer(&createdScratch[0])), C.int(len(createdScratch)), &n)
 	if rc != C.SQLITE_DONE {
-		return 0, "", dbErr()
+		return 0, nil, dbErr()
 	}
-	return int64(id), string(created[:n]), nil
+	return int64(id), createdScratch[:n], nil
 }
 
 func dbLike(uid, id int64) (inserted, exists bool, err error) {
