@@ -26,11 +26,15 @@ static inline char* append_uint(char *p, sqlite3_int64 v) {
 
 static inline char* append_json_str(char *p, const unsigned char *s, int len) {
 	*p++ = '"';
+	int start = 0;
 	for (int i = 0; i < len; i++) {
 		unsigned char c = s[i];
-		if (c >= 0x20 && c != '"' && c != '\\') {
-			*p++ = (char)c;
-		} else {
+		if (c < 0x20 || c == '"' || c == '\\') {
+			if (i > start) {
+				int span = i - start;
+				memcpy(p, s + start, span);
+				p += span;
+			}
 			*p++ = '\\';
 			switch (c) {
 			case '"':
@@ -62,7 +66,13 @@ static inline char* append_json_str(char *p, const unsigned char *s, int len) {
 				break;
 			}
 			}
+			start = i + 1;
 		}
+	}
+	if (len > start) {
+		int span = len - start;
+		memcpy(p, s + start, span);
+		p += span;
 	}
 	*p++ = '"';
 	return p;

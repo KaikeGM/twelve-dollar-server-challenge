@@ -228,21 +228,34 @@ const hexDigits = "0123456789abcdef"
 
 func appendJSONString(b, s []byte) []byte {
 	b = append(b, '"')
-	for _, c := range s {
-		switch {
-		case c == '"' || c == '\\':
-			b = append(b, '\\', c)
-		case c == '\n':
-			b = append(b, '\\', 'n')
-		case c == '\r':
-			b = append(b, '\\', 'r')
-		case c == '\t':
-			b = append(b, '\\', 't')
-		case c < 0x20:
-			b = append(b, '\\', 'u', '0', '0', hexDigits[c>>4], hexDigits[c&15])
-		default:
-			b = append(b, c)
+	start := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x20 || c == '"' || c == '\\' {
+			if i > start {
+				b = append(b, s[start:i]...)
+			}
+			switch c {
+			case '"', '\\':
+				b = append(b, '\\', c)
+			case '\n':
+				b = append(b, '\\', 'n')
+			case '\r':
+				b = append(b, '\\', 'r')
+			case '\t':
+				b = append(b, '\\', 't')
+			case '\b':
+				b = append(b, '\\', 'b')
+			case '\f':
+				b = append(b, '\\', 'f')
+			default:
+				b = append(b, '\\', 'u', '0', '0', hexDigits[c>>4], hexDigits[c&15])
+			}
+			start = i + 1
 		}
+	}
+	if len(s) > start {
+		b = append(b, s[start:]...)
 	}
 	return append(b, '"')
 }

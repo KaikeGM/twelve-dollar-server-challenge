@@ -17,4 +17,4 @@ if [ ! -f sqlite/sqlite3.c ]; then
 fi
 
 mkdir -p bin
-CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o bin/server .
+CGO_ENABLED=1 CGO_CFLAGS="-O3 -march=native -flto -DNDEBUG" CGO_LDFLAGS="-Wl,-O3 -flto" go build -trimpath -ldflags="-s -w" -o bin/server .
