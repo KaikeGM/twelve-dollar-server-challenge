@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -556,6 +557,8 @@ func main() {
 	hostPortFlag := flag.String("target", "127.0.0.1:3000", "Target server host:port")
 	pinCPUsFlag := flag.Bool("pin-cpus", true, "Isolate CPU cores via sched_setaffinity (Server on Physical Core 0, Loadgen on remaining cores)")
 	csvPathFlag := flag.String("csv", "", "Optional file path to export second-by-second per-process telemetry as CSV")
+	tlsFlag := flag.Bool("tls", false, "Enable TLS/HTTPS (automatically enabled if target port is 443)")
+	hostHeaderFlag := flag.String("host", "", "HTTP Host header override (defaults to target hostname)")
 	flag.Parse()
 
 	selfPID := os.Getpid()
@@ -769,11 +772,32 @@ func main() {
 	}()
 
 	targetAddr := *hostPortFlag
+	var hostHeader string
+	isTLS := *tlsFlag
+	if strings.Contains(targetAddr, ":") {
+		h, p, err := net.SplitHostPort(targetAddr)
+		if err == nil {
+			hostHeader = h
+			if p == "443" {
+				isTLS = true
+			}
+		} else {
+			hostHeader = targetAddr
+		}
+	} else {
+		hostHeader = targetAddr
+	}
+	if *hostHeaderFlag != "" {
+		hostHeader = *hostHeaderFlag
+	}
+	isLocal := strings.HasPrefix(hostHeader, "127.") || hostHeader == "localhost"
+
 	numVUs := *usersFlag
 	rampUp := *rampUpFlag
 	steadyDuration := *durationFlag
 
 	fmt.Printf("\nStarting benchmark with %d concurrent VUs...\n", numVUs)
+	fmt.Printf("Target: %s (Host: %s, TLS: %v, Local: %v)\n", targetAddr, hostHeader, isTLS, isLocal)
 	fmt.Printf("Connection ramp-up: %v (~%.0f VUs/s)\n", rampUp, float64(numVUs)/rampUp.Seconds())
 	fmt.Printf("Steady-state plateau: %v\n", steadyDuration)
 	if srvPID > 0 {
@@ -801,7 +825,7 @@ func main() {
 		batchDelay = 5 * time.Millisecond
 	}
 
-	// Prepare 25 pre-allocated net.Dialers (one per loopback IP)
+	// Prepare 25 pre-allocated net.Dialers for local loopback IPs (if testing local server)
 	dialers := make([]*net.Dialer, numIPs)
 	for i := 0; i < numIPs; i++ {
 		dialers[i] = &net.Dialer{
@@ -809,6 +833,10 @@ func main() {
 			Timeout:   10 * time.Second,
 			KeepAlive: 65 * time.Second,
 		}
+	}
+	remoteDialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 65 * time.Second,
 	}
 
 	// Offload net.Dialer.Dial onto a small pool of dialer goroutines so that the
@@ -822,7 +850,13 @@ func main() {
 	for w := 0; w < 64; w++ {
 		go func() {
 			for req := range dialCh {
-				c, err := dialers[req.ipIdx].Dial("tcp", targetAddr)
+				var c net.Conn
+				var err error
+				if isLocal {
+					c, err = dialers[req.ipIdx].Dial("tcp", targetAddr)
+				} else {
+					c, err = remoteDialer.Dial("tcp", targetAddr)
+				}
 				if err != nil {
 					req.reply <- nil
 					continue
@@ -831,6 +865,17 @@ func main() {
 					_ = tc.SetNoDelay(true)
 					_ = tc.SetKeepAlive(true)
 					_ = tc.SetKeepAlivePeriod(65 * time.Second)
+				}
+				if isTLS {
+					tlsConn := tls.Client(c, &tls.Config{
+						ServerName: hostHeader,
+					})
+					if err := tlsConn.Handshake(); err != nil {
+						c.Close()
+						req.reply <- nil
+						continue
+					}
+					c = tlsConn
 				}
 				req.reply <- c
 			}
@@ -890,7 +935,9 @@ func main() {
 			_, _ = sc.writer.WriteString(method)
 			_ = sc.writer.WriteByte(' ')
 			_, _ = sc.writer.WriteString(path)
-			_, _ = sc.writer.WriteString(" HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: keep-alive\r\n")
+			_, _ = sc.writer.WriteString(" HTTP/1.1\r\nHost: ")
+			_, _ = sc.writer.WriteString(hostHeader)
+			_, _ = sc.writer.WriteString("\r\nConnection: keep-alive\r\n")
 			if authToken != "" {
 				_, _ = sc.writer.WriteString("Authorization: Bearer ")
 				_, _ = sc.writer.WriteString(authToken)
