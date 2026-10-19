@@ -3,6 +3,7 @@ module go-gnet-kaikegm
 go 1.23
 
 require (
+	github.com/KaikeGM/zerojwt v1.0.1
 	github.com/panjf2000/gnet/v2 v2.10.0
 )
 
