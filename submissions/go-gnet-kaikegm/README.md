@@ -1,6 +1,6 @@
 # Go + gnet (`go-gnet-kaikegm`)
 
-High-performance, single-threaded Go feed API built for **The $12 Server Challenge**, sustaining **250,000 concurrent virtual users (C250k) at `0.000%` error rate** (`10 ms` `p95`, `50 ms` `p99`, `191.41 MiB` RSS, `1,258,121` requests), **300,000 concurrent virtual users (C300k)** within the `<1.0%` threshold (`0.055%` error rate, `20 ms` `p95`, `50 ms` `p99`, `184.93 MiB` RSS, `1,586,894` requests), and **35,577 req/s** max throughput.
+High-performance, single-threaded Go feed API built for **The $12 Server Challenge**, sustaining **250,000 concurrent virtual users (C250k) at `0.000%` error rate** (`10 ms` `p95`, `50 ms` `p99`, `191.41 MiB` RSS, `1,258,121` requests), **300,000 concurrent virtual users (C300k)** within the `<1.0%` threshold (`0.055%` error rate, `20 ms` `p95`, `50 ms` `p99`, `184.93 MiB` RSS, `1,586,894` requests), and **44,042 req/s (peaking at 48,988 req/s)** max throughput.
 
 | | |
 |---|---|
@@ -81,6 +81,7 @@ All local benchmarks were executed on a single laptop where **both the server an
 
 | Concurrent VUs | Avg Throughput | Total Requests | Error Rate | Max RAM (RSS) | Latency `p50` |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| **2,000 VUs** | **44,042 req/s** *(Peak: 48,988)* | **884,203** | **0.000%** | **33.01 MiB** | **50.0 ms** *(p95: 50ms)* |
 | **1,000 VUs** | **35,577 req/s** | 536,135 | **0.000%** | 28.29 MiB | 13.7 ms |
 | **5,000 VUs** | **33,616 req/s** | 510,846 | **0.000%** | 46.29 MiB | 131.3 ms |
 | **25,000 VUs** | **30,609 req/s** | 484,826 | **0.000%** | 78.72 MiB | 760.0 ms |
