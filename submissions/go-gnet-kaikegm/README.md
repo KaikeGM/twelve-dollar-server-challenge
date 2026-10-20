@@ -81,8 +81,8 @@ All local benchmarks were executed on a single laptop where **both the server an
 
 | Concurrent VUs | Avg Throughput | Total Requests | Error Rate | Max RAM (RSS) | Latency `p50` |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **2,000 VUs** | **44,042 req/s** *(Peak: 48,988)* | **884,203** | **0.000%** | **33.01 MiB** | **50.0 ms** *(p95: 50ms)* |
 | **1,000 VUs** | **35,577 req/s** | 536,135 | **0.000%** | 28.29 MiB | 13.7 ms |
+| **2,000 VUs** | **44,042 req/s** | 884,203 | **0.000%** | 33.01 MiB | 50.0 ms |
 | **5,000 VUs** | **33,616 req/s** | 510,846 | **0.000%** | 46.29 MiB | 131.3 ms |
 | **25,000 VUs** | **30,609 req/s** | 484,826 | **0.000%** | 78.72 MiB | 760.0 ms |
 | **80,000 VUs** | **20,399 req/s** | 375,585 | **0.000%** | 121.89 MiB | 3.52 s |
