@@ -1,6 +1,6 @@
 # Go + gnet (`go-gnet-kaikegm`)
 
-High-performance, single-threaded Go feed API built for **The $12 Server Challenge**, sustaining **250,000 concurrent virtual users (C250k) at `0.000%` error rate** (`10 ms` `p95`, `50 ms` `p99`, `191.41 MiB` RSS, `1,258,121` requests), **300,000 concurrent virtual users (C300k)** within the `<1.0%` threshold (`0.055%` error rate, `20 ms` `p95`, `50 ms` `p99`, `184.93 MiB` RSS, `1,586,894` requests), and **44,042 req/s (peaking at 48,988 req/s)** max throughput.
+High-performance, single-threaded Go feed API built for **The $12 Server Challenge**, sustaining **250,000 concurrent virtual users (C250k) at `0.000%` error rate** (`10 ms` `p95`, `50 ms` `p99`, `191.41 MiB` RSS, `1,258,121` requests), **300,000 concurrent virtual users (C300k)** within the `<1.0%` threshold (`0.055%` error rate, `20 ms` `p95`, `50 ms` `p99`, `184.93 MiB` RSS, `1,586,894` requests), and **44,042 req/s (peaking at 49,643 req/s)** max throughput.
 
 | | |
 |---|---|
@@ -9,7 +9,7 @@ High-performance, single-threaded Go feed API built for **The $12 Server Challen
 | **HTTP Engine** | Custom zero-allocation HTTP/1.1 keep-alive parser and response serializer on `:80` |
 | **SQLite Driver** | In-tree CGO binding to pinned SQLite 3.53.4 amalgamation (`-O3 -march=native -flto -DNDEBUG`, `SQLITE_THREADSAFE=2`, `SQLITE_USE_ALLOCA=1`) |
 | **JSON Serialization** | Direct C row-to-JSON serializer (`q_feed`, `q_post`) with vectorized span `memcpy` into Go response buffer in a single CGO call (~40% faster `/feed`) |
-| **Authentication** | [`zerojwt`](https://github.com/KaikeGM/zerojwt) v1.2.0 zero-allocation HS256 JWT validator (`0 B/op`, `0 allocs/op`, ~640 ns/op, Rule 5 compliant) |
+| **Authentication** | [`zerojwt/v2`](https://github.com/KaikeGM/zerojwt) zero-allocation HS256 JWT validator (`0 B/op`, `0 allocs/op`, ~640 ns/op, Rule 5 compliant) |
 | **Nginx or Direct** | **Direct on `:80`**: handles **250,000–300,000 keep-alive connections** with **~185–191 MiB RAM**, saving 15–20% Nginx CPU overhead |
 
 All Go module dependencies are pinned in `go.mod` and `go.sum`. The SQLite 3.53.4 amalgamation is pinned and SHA-256 verified in `build.sh`.
@@ -33,8 +33,8 @@ SQLITE_PATH=... JWT_SECRET=... HOST=0.0.0.0 PORT=80 bash start.sh
 3. **In-Tree Lock-Free SQLite 3.53.4 (`EXCLUSIVE` + 1 GiB `mmap` + WAL Page Cache)**
    Compiled in-tree with `-O3 -march=native -flto -DNDEBUG -fomit-frame-pointer -finline-functions -DSQLITE_THREADSAFE=2 -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_USE_ALLOCA=1 -DSQLITE_OMIT_PROGRESS_CALLBACK=1 -DSQLITE_OMIT_SHARED_CACHE=1`. Configured with `PRAGMA locking_mode=EXCLUSIVE` (zero `-shm` lock syscalls), `journal_mode=WAL`, `synchronous=NORMAL` (Rule 6), `mmap_size=1073741824` (1 GiB zero-copy memory-mapped reads), `cache_size=-16384` (keeping hot WAL index pages in RAM), and `wal_autocheckpoint=10000`.
 
-4. **Zero-Allocation HS256 JWT Verification with [`zerojwt`](https://github.com/KaikeGM/zerojwt) v1.2.0 (Rule 5 Compliant)**
-   Verifies every incoming token signature from scratch (`0 B/op`, `0 allocs/op`, **~640 ns/op**) using [`github.com/KaikeGM/zerojwt@v1.2.0`](https://github.com/KaikeGM/zerojwt) in `VerifyWithScratch` mode (single-threaded scratch buffer bound to the event loop, zero heap allocations, zero synchronization, compliant with Rule 5 zero-caching).
+4. **Zero-Allocation HS256 JWT Verification with [`zerojwt/v2`](https://github.com/KaikeGM/zerojwt) (Rule 5 Compliant)**
+   Verifies every incoming token signature from scratch (`0 B/op`, `0 allocs/op`, **~640 ns/op**) using [`github.com/KaikeGM/zerojwt/v2`](https://github.com/KaikeGM/zerojwt) in `VerifyWithScratch` mode (single-threaded scratch buffer bound to the event loop, zero heap allocations, zero synchronization, compliant with Rule 5 zero-caching).
 
 5. **Profile-Guided Optimization (`default.pgo`) & Runtime Tuning**
    Built with a CPU profile (`default.pgo`) captured under realistic load so the Go compiler optimizes hot-path inlining and branch layout (`OnTraffic`, `parseRequest`, `verifyJWT`, `dbFeed`), paired with `debug.SetGCPercent(400)` and `debug.SetMemoryLimit(1200 << 20)`.

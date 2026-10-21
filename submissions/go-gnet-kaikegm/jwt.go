@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/KaikeGM/zerojwt"
+	"github.com/KaikeGM/zerojwt/v2"
 )
 
 var (
@@ -15,7 +15,13 @@ var (
 )
 
 func setJWTSecret(secret []byte) {
-	jwtVerifier = zerojwt.NewVerifier(secret)
+	var err error
+	jwtVerifier, err = zerojwt.New(secret, zerojwt.Options{
+		AllowShortSecret: true,
+	})
+	if err != nil {
+		panic(err)
+	}
 	jwtScratch = jwtVerifier.NewScratch()
 }
 
@@ -34,7 +40,7 @@ func authenticate(authHeader []byte) (uid int64, username []byte, status int, ms
 	return uid, username, 0, ""
 }
 
-// verifyJWT validates the token using zerojwt's single-threaded Scratch (0 B/op, 0 allocs/op).
+// verifyJWT validates the token using zerojwt/v2's single-threaded Scratch (0 B/op, 0 allocs/op).
 func verifyJWT(tok []byte, now int64) (uid int64, username []byte, ok, payloadOK bool) {
 	err := jwtVerifier.VerifyWithScratch(tok, now, &jwtClaims, jwtScratch)
 	if err != nil {
