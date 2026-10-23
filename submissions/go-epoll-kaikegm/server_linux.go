@@ -215,6 +215,7 @@ func listenSocket(host string, port int) (int, error) {
 		return -1, err
 	}
 	_ = syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+	_ = syscall.SetsockoptInt(fd, syscall.IPPROTO_TCP, syscall.TCP_DEFER_ACCEPT, 1)
 	if err := syscall.Bind(fd, sa); err != nil {
 		return -1, err
 	}
@@ -335,6 +336,7 @@ func (s *server) acceptAll() {
 		s.conns[fd] = conn{lastMs: s.nowMs, prev: -1, next: -1, open: true}
 		s.openConns++
 		s.lruAdd(int32(fd))
+		s.readConn(fd, &s.conns[fd])
 	}
 }
 
