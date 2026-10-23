@@ -26,7 +26,6 @@ int main(int argc, char **argv) {
     sqlite3_close(db);
 
     const char *pragmas =
-        "PRAGMA locking_mode = EXCLUSIVE;"
         "PRAGMA journal_mode = WAL;"
         "PRAGMA synchronous = NORMAL;"
         "PRAGMA foreign_keys = ON;"
@@ -83,6 +82,6 @@ int main(int argc, char **argv) {
         db_checkpoint_if_due(ctx);
     }
 
-    sqlite3_close(ctx->db);
+    db_close(ctx);
     return 0;
 }

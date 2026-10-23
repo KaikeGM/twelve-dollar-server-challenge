@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include <sqlite3.h>
 
 enum {
@@ -36,6 +37,14 @@ typedef struct {
 
 typedef struct {
     sqlite3      *db;
+    sqlite3      *bg_db;
+    pthread_t     bg_tid;
+    pthread_mutex_t bg_mutex;
+    pthread_cond_t  bg_cond;
+    int           bg_running;
+    int           bg_trigger;
+    int           bg_active;
+
     sqlite3_stmt *s_health;
     sqlite3_stmt *s_ids;
     sqlite3_stmt *s_range_posts_desc;
@@ -64,5 +73,6 @@ typedef struct {
 db_ctx *db_init(const char *path, const char *pragma_sql, int max_ops, int req_cap, int out_cap, char **err_out);
 void db_exec_batch(db_ctx *ctx, int n_ops, int64_t uptime_s);
 int db_checkpoint_if_due(db_ctx *ctx);
+void db_close(db_ctx *ctx);
 
 #endif

@@ -326,6 +326,7 @@ func (s *server) acceptAll() {
 			continue
 		}
 		_ = syscall.SetsockoptInt(fd, syscall.IPPROTO_TCP, syscall.TCP_NODELAY, 1)
+		_ = syscall.SetsockoptInt(fd, syscall.IPPROTO_TCP, 12, 1) // TCP_QUICKACK
 		s.ctl = syscall.EpollEvent{Events: syscall.EPOLLIN, Fd: int32(fd)}
 		if syscall.EpollCtl(s.epfd, syscall.EPOLL_CTL_ADD, fd, &s.ctl) != nil {
 			sysClose(fd)
@@ -398,9 +399,14 @@ func (s *server) readConn(fd int, c *conn) {
 	}
 }
 
+var (
+	keyBodyQuoted = []byte(`"body"`)
+	keyBody       = []byte("body")
+)
+
 func (s *server) route(r *request, closeConn bool) int {
-	isGet := len(r.method) == 3 && string(r.method) == "GET"
-	isPost := len(r.method) == 4 && string(r.method) == "POST"
+	isGet := len(r.method) == 3 && r.method[0] == 'G' && r.method[1] == 'E' && r.method[2] == 'T'
+	isPost := len(r.method) == 4 && r.method[0] == 'P' && r.method[1] == 'O' && r.method[2] == 'S' && r.method[3] == 'T'
 
 	switch {
 	case isGet && bytes.Equal(r.path, pathFeed):
@@ -457,9 +463,9 @@ func (s *server) handleCreate(r *request, closeConn bool) int {
 	}
 	var text []byte
 	for m, more := obj.next(); more; m, more = obj.next() {
-		if string(m.key) == `"body"` || (bytes.IndexByte(m.key, '\\') >= 0 && string(unescape(s.keyScratch[:0], m.key)) == "body") {
+		if bytes.Equal(m.key, keyBodyQuoted) || (bytes.IndexByte(m.key, '\\') >= 0 && bytes.Equal(unescape(s.keyScratch[:0], m.key), keyBody)) {
 			text = nil
-			if m.val[0] == '"' {
+			if len(m.val) > 0 && m.val[0] == '"' {
 				text = unescapeRef(s.textScratch[:0], m.val)
 			}
 		}
@@ -471,7 +477,7 @@ func (s *server) handleCreate(r *request, closeConn bool) int {
 	if len(text) == 0 {
 		return s.db.pushStatic(400, errBodyRequired, closeConn)
 	}
-	if utf8.RuneCount(text) > maxBodyChars {
+	if len(text) > maxBodyChars && utf8.RuneCount(text) > maxBodyChars {
 		return s.db.pushStatic(400, errBodyTooLong, closeConn)
 	}
 	return s.db.pushCreate(uid, text, user, closeConn)
@@ -495,16 +501,40 @@ func (s *server) finishBatch() {
 
 	ops := s.db.ops
 	outBuf := s.db.outBuf
-	for i := range s.batch {
+	n := len(s.batch)
+	for i := 0; i < n; {
 		item := s.batch[i]
 		fd := int(item.fd)
 		c := &s.conns[fd]
 		if !c.open {
+			i++
 			continue
 		}
-		op := &ops[item.opIdx]
-		resp := outBuf[op.resp_off : op.resp_off+op.resp_len]
-		s.sendConn(fd, c, resp)
+
+		firstOp := &ops[item.opIdx]
+		startOff := firstOp.resp_off
+		endOff := firstOp.resp_off + firstOp.resp_len
+		lastClosing := firstOp.close_conn != 0
+
+		j := i + 1
+		for j < n && int(s.batch[j].fd) == fd {
+			nextOp := &ops[s.batch[j].opIdx]
+			if nextOp.resp_off == endOff {
+				endOff = nextOp.resp_off + nextOp.resp_len
+				if nextOp.close_conn != 0 {
+					lastClosing = true
+				}
+				j++
+			} else {
+				break
+			}
+		}
+
+		if lastClosing {
+			c.closing = true
+		}
+		s.sendConn(fd, c, outBuf[startOff:endOff])
+		i = j
 	}
 
 	s.db.checkpointIfDue()

@@ -96,10 +96,15 @@ func scanValue(b []byte, i, depth int) (int, bool) {
 }
 
 func lit(b []byte, i int, s string) (int, bool) {
-	if len(b)-i >= len(s) && string(b[i:i+len(s)]) == s {
-		return i + len(s), true
+	if len(b)-i < len(s) {
+		return i, false
 	}
-	return i, false
+	for j := 0; j < len(s); j++ {
+		if b[i+j] != s[j] {
+			return i, false
+		}
+	}
+	return i + len(s), true
 }
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }

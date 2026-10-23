@@ -12,6 +12,7 @@ const (
 var (
 	methodGet  = "GET"
 	methodPost = "POST"
+	protoHTTP1 = []byte("HTTP/1.")
 )
 
 type request struct {
@@ -22,9 +23,6 @@ type request struct {
 }
 
 func eqFoldASCII(b []byte, s string) bool {
-	if string(b) == s {
-		return true
-	}
 	if len(b) != len(s) {
 		return false
 	}
@@ -71,7 +69,7 @@ func parseRequest(b []byte, r *request) int {
 	}
 	target := rest[:sp2]
 	proto := rest[sp2+1:]
-	if target[0] != '/' || len(proto) != 8 || string(proto[:7]) != "HTTP/1." || (proto[7] != '1' && proto[7] != '0') {
+	if target[0] != '/' || len(proto) != 8 || !bytes.Equal(proto[:7], protoHTTP1) || (proto[7] != '1' && proto[7] != '0') {
 		return -1
 	}
 	if q := bytes.IndexByte(target, '?'); q >= 0 {

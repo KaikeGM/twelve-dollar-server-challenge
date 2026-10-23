@@ -18,11 +18,11 @@ fi
 
 if [ -f .deps/sqlite3.c ]; then
   if [ ! -f .deps/libsqlite3.a ] || [ build.sh -nt .deps/libsqlite3.a ] || [ shim.h -nt .deps/libsqlite3.a ] || [ pgo/engine.c -nt .deps/libsqlite3.a ] || [ pgo/train.c -nt .deps/libsqlite3.a ]; then
-    flags="-O3 -march=native -fno-semantic-interposition -fno-plt -fomit-frame-pointer -I.deps -DHAVE_SQLITE_AMALGAMATION -DSQLITE_THREADSAFE=0 -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_OMIT_AUTOINIT -DSQLITE_OMIT_DECLTYPE -DSQLITE_DQS=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_OMIT_DEPRECATED -DSQLITE_OMIT_SHARED_CACHE -DSQLITE_OMIT_PROGRESS_CALLBACK -DSQLITE_LIKE_DOESNT_MATCH_BLOBS -DSQLITE_MAX_EXPR_DEPTH=0 -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1 -DSQLITE_USE_ALLOCA -DHAVE_FDATASYNC=1"
+    flags="-O3 -march=native -pthread -fno-semantic-interposition -fno-plt -fomit-frame-pointer -I.deps -DHAVE_SQLITE_AMALGAMATION -DSQLITE_THREADSAFE=2 -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_OMIT_AUTOINIT -DSQLITE_OMIT_DECLTYPE -DSQLITE_DQS=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_OMIT_DEPRECATED -DSQLITE_OMIT_SHARED_CACHE -DSQLITE_OMIT_PROGRESS_CALLBACK -DSQLITE_LIKE_DOESNT_MATCH_BLOBS -DSQLITE_MAX_EXPR_DEPTH=0 -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1 -DSQLITE_USE_ALLOCA -DHAVE_FDATASYNC=1"
     profile="$PWD/.deps/pgo"
     rm -rf "$profile"
     cc $flags -fprofile-generate="$profile" -c pgo/engine.c -o .deps/engine.o
-    cc -O3 -march=native -I.deps -fprofile-generate="$profile" pgo/train.c .deps/engine.o -lm -o .deps/train
+    cc -O3 -march=native -pthread -I.deps -fprofile-generate="$profile" pgo/train.c .deps/engine.o -lm -lpthread -o .deps/train
     scratch="$(mktemp -d)"
     .deps/train "$scratch/train.db" "$(cat ../../schema.sql)"
     rm -rf "$scratch"
@@ -32,9 +32,9 @@ if [ -f .deps/sqlite3.c ]; then
   fi
 else
   cp /usr/lib/x86_64-linux-gnu/libsqlite3.a .deps/libsqlite3.a
-  cc -O3 -march=native -I.deps -c pgo/engine.c -o .deps/engine.o
+  cc -O3 -march=native -pthread -I.deps -c pgo/engine.c -o .deps/engine.o
   ar rcs .deps/libsqlite3.a .deps/engine.o
 fi
 
 export PATH="/usr/local/go/bin:$PATH" GOTOOLCHAIN=local CGO_ENABLED=1
-go build -trimpath -ldflags="-s -w" -o bin/server .
+go build -trimpath -ldflags="-s -w" -pgo=auto -o bin/server .

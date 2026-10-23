@@ -243,6 +243,8 @@ static int prep_one(sqlite3 *db, const char *sql, sqlite3_stmt **out) {
     return sqlite3_prepare_v3(db, sql, -1, SQLITE_PREPARE_PERSISTENT, out, NULL);
 }
 
+static void *bg_checkpoint_worker(void *arg);
+
 db_ctx *db_init(const char *path, const char *pragma_sql, int max_ops, int req_cap, int out_cap, char **err_out) {
     db_ctx *ctx = (db_ctx *)calloc(1, sizeof(db_ctx));
     if (!ctx) return NULL;
@@ -284,7 +286,40 @@ db_ctx *db_init(const char *path, const char *pragma_sql, int max_ops, int req_c
     }
 
     sqlite3_wal_hook(ctx->db, on_wal_hook, ctx);
+
+    int rc_bg = sqlite3_open_v2(path, &ctx->bg_db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, NULL);
+    if (rc_bg == SQLITE_OK) {
+        sqlite3_exec(ctx->bg_db, "PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;", NULL, NULL, NULL);
+        pthread_mutex_init(&ctx->bg_mutex, NULL);
+        pthread_cond_init(&ctx->bg_cond, NULL);
+        ctx->bg_running = 1;
+        ctx->bg_trigger = 0;
+        ctx->bg_active = 0;
+        pthread_create(&ctx->bg_tid, NULL, bg_checkpoint_worker, ctx);
+    }
+
     return ctx;
+}
+
+static void *bg_checkpoint_worker(void *arg) {
+    db_ctx *ctx = (db_ctx *)arg;
+    pthread_mutex_lock(&ctx->bg_mutex);
+    while (ctx->bg_running) {
+        while (ctx->bg_running && !ctx->bg_trigger) {
+            pthread_cond_wait(&ctx->bg_cond, &ctx->bg_mutex);
+        }
+        if (!ctx->bg_running) break;
+        ctx->bg_trigger = 0;
+        ctx->bg_active = 1;
+        pthread_mutex_unlock(&ctx->bg_mutex);
+
+        sqlite3_wal_checkpoint_v2(ctx->bg_db, NULL, SQLITE_CHECKPOINT_PASSIVE, NULL, NULL);
+
+        pthread_mutex_lock(&ctx->bg_mutex);
+        ctx->bg_active = 0;
+    }
+    pthread_mutex_unlock(&ctx->bg_mutex);
+    return NULL;
 }
 
 static inline int step_simple(sqlite3_stmt *s) {
@@ -628,9 +663,35 @@ void db_exec_batch(db_ctx *ctx, int n_ops, int64_t uptime_s) {
 }
 
 int db_checkpoint_if_due(db_ctx *ctx) {
-    int limit = ctx->has_feed ? 4000 : 32000;
+    int limit = ctx->has_feed ? 4000 : 16000;
     if (ctx->wal_pages < limit) return SQLITE_OK;
     ctx->wal_pages = 0;
     ctx->has_feed = 0;
+
+    if (ctx->bg_running) {
+        pthread_mutex_lock(&ctx->bg_mutex);
+        if (!ctx->bg_trigger && !ctx->bg_active) {
+            ctx->bg_trigger = 1;
+            pthread_cond_signal(&ctx->bg_cond);
+        }
+        pthread_mutex_unlock(&ctx->bg_mutex);
+        return SQLITE_OK;
+    }
     return sqlite3_wal_checkpoint_v2(ctx->db, NULL, SQLITE_CHECKPOINT_PASSIVE, NULL, NULL);
+}
+
+void db_close(db_ctx *ctx) {
+    if (!ctx) return;
+    if (ctx->bg_running) {
+        pthread_mutex_lock(&ctx->bg_mutex);
+        ctx->bg_running = 0;
+        ctx->bg_trigger = 1;
+        pthread_cond_signal(&ctx->bg_cond);
+        pthread_mutex_unlock(&ctx->bg_mutex);
+        pthread_join(ctx->bg_tid, NULL);
+        pthread_mutex_destroy(&ctx->bg_mutex);
+        pthread_cond_destroy(&ctx->bg_cond);
+    }
+    if (ctx->bg_db) sqlite3_close(ctx->bg_db);
+    if (ctx->db) sqlite3_close(ctx->db);
 }

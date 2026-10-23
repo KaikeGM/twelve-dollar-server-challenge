@@ -2,7 +2,7 @@ package main
 
 /*
 #cgo CFLAGS: -O3 -march=native -I${SRCDIR}/.deps
-#cgo LDFLAGS: -L${SRCDIR}/.deps -lsqlite3 -lm
+#cgo LDFLAGS: -L${SRCDIR}/.deps -lsqlite3 -lm -lpthread
 #include "shim.h"
 */
 import "C"
@@ -25,7 +25,7 @@ const (
 	outArenaCap = 16 << 20
 )
 
-var pragmas = "PRAGMA locking_mode = EXCLUSIVE; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA mmap_size = 1073741824; PRAGMA cache_size = -16384; PRAGMA temp_store = MEMORY;"
+var pragmas = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA mmap_size = 1073741824; PRAGMA cache_size = -16384; PRAGMA temp_store = MEMORY;"
 
 type db struct {
 	ctx    *C.db_ctx

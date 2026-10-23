@@ -4,10 +4,11 @@ Ultra-high-performance, bare-metal Go feed API built for **The $12 Server Challe
 
 | | |
 |---|---|
-| **Language & Compiler** | Go 1.27.2 (`-trimpath -ldflags="-s -w"`) |
+| **Language & Compiler** | Go 1.27 (`-trimpath -ldflags="-s -w" -pgo=auto` with `default.pgo`) |
 | **Networking** | Bare-metal, single-threaded Linux `epoll` event loop (`RawSyscall(SYS_ACCEPT4)`, `RawSyscall(SYS_READ)`, `RawSyscall(SYS_WRITE)`) |
-| **HTTP Engine** | Custom zero-allocation HTTP/1.1 parser with single-pass `IndexByte` delimiter scanning and in-place header prepending |
-| **SQLite Engine** | Pinned SQLite 3.53.4 amalgamation compiled as a single PGO-trained Unity C translation unit (`-O3 -march=native -flto`, `SQLITE_THREADSAFE=0`, direct `Vdbe`/`Mem` access) |
+| **HTTP Engine** | Custom zero-allocation HTTP/1.1 parser with single-pass delimiter scanning, contiguous response pipelining and TCP_QUICKACK |
+| **SQLite Engine** | Pinned SQLite 3.53.4 amalgamation compiled as a PGO-trained Unity C translation unit (`-O3 -march=native -flto`, `SQLITE_THREADSAFE=2`, direct `Vdbe`/`Mem` access) |
+| **WAL Checkpointer** | Dedicated background POSIX thread with secondary `SQLITE_OPEN_NOMUTEX` connection offloading `sqlite3_wal_checkpoint_v2` with zero loop pauses |
 | **Authentication** | [`zerojwt/v2`](https://github.com/KaikeGM/zerojwt) zero-allocation HS256 JWT validator (`0 B/op`, `0 allocs/op`, ~640 ns/op, Rule 5 compliant) |
 | **Transactions** | WAL Group Commit: batches all writes within an `epoll_wait` cycle into a single `BEGIN IMMEDIATE ... COMMIT` transaction (Rule 6 compliant) |
 | **Nginx or Direct** | **Direct on `:80`**: zero reverse-proxy overhead, minimal user-space memory footprint per idle connection |
@@ -44,6 +45,12 @@ SQLITE_PATH=... JWT_SECRET=... HOST=0.0.0.0 PORT=80 bash start.sh
 
 6. **In-Place HTTP Framing & SSE2 Vectorized JSON Escaping**
    Writes JSON response payloads at offset `pos + 128` in the output arena, computes the exact `Content-Length`, and prepends HTTP/1.1 response headers backwards directly in front of the body, eliminating intermediate buffers and extra memory copies.
+
+7. **Asynchronous WAL Checkpointing in Dedicated C Pthread**
+   Offloads `sqlite3_wal_checkpoint_v2` to a separate background thread with a secondary `SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX` connection. The main event loop triggers checkpoints via condition variables in ~50 ns without ever stalling for disk `fdatasync()` I/O.
+
+8. **End-to-End Profile-Guided Optimization (GCC + Go PGO)**
+   Both layers are profile-guided: SQLite/engine is trained via GCC `-fprofile-generate`/`-fprofile-use`, and the Go binary is compiled with `-pgo=auto` (`default.pgo`) trained under realistic multi-VU workload for aggressive cross-package inlining and branch prediction.
 
 ## Verification & Benchmarks
 
