@@ -83,8 +83,17 @@ type server struct {
 	batch       []batchItem
 }
 
+type cpuSet [16]uintptr // 128 bytes (1024 bits cpu_set_t)
+
+func pinToCore0() {
+	var set cpuSet
+	set[0] = 1 // bit 0 = CPU Core 0
+	_, _, _ = syscall.RawSyscall(syscall.SYS_SCHED_SETAFFINITY, 0, unsafe.Sizeof(set), uintptr(unsafe.Pointer(&set)))
+}
+
 func serve(host, portStr string, d *db, secret string) error {
 	runtime.LockOSThread()
+	pinToCore0()
 
 	var lim syscall.Rlimit
 	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &lim); err == nil {
@@ -328,6 +337,8 @@ func (s *server) acceptAll() {
 		}
 		_ = syscall.SetsockoptInt(fd, syscall.IPPROTO_TCP, syscall.TCP_NODELAY, 1)
 		_ = syscall.SetsockoptInt(fd, syscall.IPPROTO_TCP, 12, 1) // TCP_QUICKACK
+		_ = syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF, 32768)
+		_ = syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_SNDBUF, 32768)
 		s.ctl = syscall.EpollEvent{Events: syscall.EPOLLIN, Fd: int32(fd)}
 		if syscall.EpollCtl(s.epfd, syscall.EPOLL_CTL_ADD, fd, &s.ctl) != nil {
 			sysClose(fd)

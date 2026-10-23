@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"strconv"
 	"unicode/utf8"
 )
@@ -162,6 +163,21 @@ func hexVal(c byte) int {
 func scanString(b []byte, i int) (int, bool) {
 	i++
 	for i < len(b) {
+		for i+8 <= len(b) {
+			v := binary.LittleEndian.Uint64(b[i:])
+			q := v ^ 0x2222222222222222
+			b1 := v ^ 0x5C5C5C5C5C5C5C5C
+			hasCtrlOrHi := (v & 0x8080808080808080) | ((v - 0x2020202020202020) &^ v)
+			hasQuote := (q - 0x0101010101010101) &^ q
+			hasBackslash := (b1 - 0x0101010101010101) &^ b1
+			if (hasCtrlOrHi | hasQuote | hasBackslash)&0x8080808080808080 != 0 {
+				break
+			}
+			i += 8
+		}
+		if i >= len(b) {
+			break
+		}
 		c := b[i]
 		switch {
 		case c == '"':
@@ -358,6 +374,10 @@ func parseJSONNumber(v []byte) (float64, bool) {
 	return f, err == nil
 }
 
+func isASCIIWhitespace(c byte) bool {
+	return c == ' ' || (c >= '\t' && c <= '\r')
+}
+
 func isTrimSpace(r rune) bool {
 	switch r {
 	case '\t', '\n', '\v', '\f', '\r', ' ', 0xA0, 0x1680, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF:
@@ -368,8 +388,9 @@ func isTrimSpace(r rune) bool {
 
 func trimSpace(s []byte) []byte {
 	for len(s) > 0 {
-		if s[0] < 0x80 {
-			if !isTrimSpace(rune(s[0])) {
+		c := s[0]
+		if c < 0x80 {
+			if !isASCIIWhitespace(c) {
 				break
 			}
 			s = s[1:]
@@ -384,7 +405,7 @@ func trimSpace(s []byte) []byte {
 	for len(s) > 0 {
 		last := s[len(s)-1]
 		if last < 0x80 {
-			if !isTrimSpace(rune(last)) {
+			if !isASCIIWhitespace(last) {
 				break
 			}
 			s = s[:len(s)-1]
