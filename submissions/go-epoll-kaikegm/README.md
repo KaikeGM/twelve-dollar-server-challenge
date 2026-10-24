@@ -1,6 +1,6 @@
 # Go + Raw Epoll (`go-epoll-kaikegm`)
 
-Ultra-high-performance, bare-metal Go feed API built for **The $12 Server Challenge**, sustaining **79,565 req/s** max throughput at **`0.000%` error rate** (`20 ms` `p95`, `50 ms` `p99`, `1,595,519` requests in 20 seconds) with zero dropped connections.
+Ultra-high-performance, bare-metal Go feed API built for **The $12 Server Challenge**, sustaining **83,942 req/s** throughput at **`0.000%` error rate** (`9.5 ms` average latency, `20 ms` `p95`, `50 ms` `p99`, `928,265` requests in 11 seconds) with zero dropped connections.
 
 | | |
 |---|---|
@@ -59,4 +59,4 @@ SQLITE_PATH=... JWT_SECRET=... HOST=0.0.0.0 PORT=80 bash start.sh
 
 | Concurrent VUs | Avg Throughput | Total Requests | Error Rate | Latency `p95` | Latency `p99` | Verdict |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **2,000 VUs** | **79,565 req/s** | **1,595,519** | **0.000%** | **20.0 ms** | **50.0 ms** | **PASS (0 Errors)** |
+| **2,000 VUs** | **83,942 req/s** | **928,265** | **0.000%** | **20.0 ms** | **50.0 ms** | **PASS (0 Errors)** |

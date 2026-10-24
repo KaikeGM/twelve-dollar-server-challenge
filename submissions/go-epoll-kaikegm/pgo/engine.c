@@ -273,7 +273,7 @@ db_ctx *db_init(const char *path, const char *pragma_sql, int max_ops, int req_c
         prep_one(ctx->db, "SELECT p.id, p.body, p.created_at, u.username FROM posts p JOIN users u ON u.id = p.user_id WHERE p.id BETWEEN ?1 AND ?2 ORDER BY p.id DESC", &ctx->s_range_posts_desc) != SQLITE_OK ||
         prep_one(ctx->db, "SELECT post_id FROM likes WHERE post_id BETWEEN ?1 AND ?2", &ctx->s_range_likes) != SQLITE_OK ||
         prep_one(ctx->db, "SELECT p.id, p.body, p.created_at, u.username, (SELECT count(*) FROM likes l WHERE l.post_id = p.id) FROM posts p JOIN users u ON u.id = p.user_id ORDER BY p.created_at DESC, p.id DESC LIMIT 20", &ctx->s_feed_ref) != SQLITE_OK ||
-        prep_one(ctx->db, "SELECT p.body, p.created_at, (SELECT username FROM users WHERE id = p.user_id), (SELECT count(*) FROM likes WHERE post_id = p.id) FROM posts p WHERE p.id = ?1", &ctx->s_post) != SQLITE_OK ||
+        prep_one(ctx->db, "SELECT p.body, p.created_at, u.username, (SELECT count(*) FROM likes WHERE post_id = ?1) FROM posts p JOIN users u ON u.id = p.user_id WHERE p.id = ?1", &ctx->s_post) != SQLITE_OK ||
         prep_one(ctx->db, "INSERT INTO posts (user_id, body) VALUES (?1, ?2) RETURNING id, created_at", &ctx->s_insert) != SQLITE_OK ||
         prep_one(ctx->db, "INSERT INTO likes (user_id, post_id) SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM posts WHERE id = ?2) ON CONFLICT (user_id, post_id) DO NOTHING", &ctx->s_like) != SQLITE_OK ||
         prep_one(ctx->db, "SELECT 1 FROM posts WHERE id = ?1", &ctx->s_exists) != SQLITE_OK ||
