@@ -236,6 +236,10 @@ func listenSocket(host string, port int) (int, error) {
 		return -1, err
 	}
 	_ = syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+	_ = syscall.SetsockoptInt(fd, syscall.IPPROTO_TCP, syscall.TCP_NODELAY, 1)
+	_ = syscall.SetsockoptInt(fd, syscall.IPPROTO_TCP, 12, 1) // TCP_QUICKACK
+	_ = syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF, 32768)
+	_ = syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_SNDBUF, 32768)
 	_ = syscall.SetsockoptInt(fd, syscall.IPPROTO_TCP, syscall.TCP_DEFER_ACCEPT, 1)
 	if err := syscall.Bind(fd, sa); err != nil {
 		return -1, err
@@ -356,10 +360,6 @@ func (s *server) acceptAll() {
 			sysClose(fd)
 			continue
 		}
-		_ = syscall.SetsockoptInt(fd, syscall.IPPROTO_TCP, syscall.TCP_NODELAY, 1)
-		_ = syscall.SetsockoptInt(fd, syscall.IPPROTO_TCP, 12, 1) // TCP_QUICKACK
-		_ = syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF, 32768)
-		_ = syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_SNDBUF, 32768)
 		s.ctl = syscall.EpollEvent{Events: syscall.EPOLLIN, Fd: int32(fd)}
 		if syscall.EpollCtl(s.epfd, syscall.EPOLL_CTL_ADD, fd, &s.ctl) != nil {
 			sysClose(fd)
