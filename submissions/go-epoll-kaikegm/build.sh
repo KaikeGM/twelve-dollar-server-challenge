@@ -37,4 +37,4 @@ else
 fi
 
 export PATH="/usr/local/go/bin:$PATH" GOTOOLCHAIN=local CGO_ENABLED=1
-go build -trimpath -ldflags="-s -w" -pgo=auto -o bin/server .
+go build -trimpath -ldflags="-s -w" -o bin/server .

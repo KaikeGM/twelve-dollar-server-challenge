@@ -4,7 +4,7 @@ Ultra-high-performance, bare-metal Go feed API built for **The $12 Server Challe
 
 | | |
 |---|---|
-| **Language & Compiler** | Go 1.27 (`-trimpath -ldflags="-s -w" -pgo=auto` with `default.pgo`) |
+| **Language & Compiler** | Go 1.27 (`-trimpath -ldflags="-s -w"`, `CGO_ENABLED=1`) |
 | **Networking** | Bare-metal, single-threaded Linux `epoll` event loop (`RawSyscall(SYS_ACCEPT4)`, `RawSyscall(SYS_READ)`, `RawSyscall(SYS_WRITE)`) |
 | **HTTP Engine** | Custom zero-allocation HTTP/1.1 parser with single-pass delimiter scanning, contiguous response pipelining and TCP_QUICKACK |
 | **SQLite Engine** | Pinned SQLite 3.53.4 amalgamation compiled as a PGO-trained Unity C translation unit (`-O3 -march=native -flto`, `SQLITE_THREADSAFE=2`, direct `Vdbe`/`Mem` access) |
@@ -49,8 +49,8 @@ SQLITE_PATH=... JWT_SECRET=... HOST=0.0.0.0 PORT=80 bash start.sh
 7. **Asynchronous WAL Checkpointing in Dedicated C Pthread**
    Offloads `sqlite3_wal_checkpoint_v2` to a separate background thread with a secondary `SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX` connection. The main event loop triggers checkpoints via condition variables in ~50 ns without ever stalling for disk `fdatasync()` I/O.
 
-8. **End-to-End Profile-Guided Optimization (GCC + Go PGO)**
-   Both layers are profile-guided: SQLite/engine is trained via GCC `-fprofile-generate`/`-fprofile-use`, and the Go binary is compiled with `-pgo=auto` (`default.pgo`) trained under realistic multi-VU workload for aggressive cross-package inlining and branch prediction.
+8. **SQLite Profile-Guided Optimization (GCC PGO)**
+   The in-tree SQLite C engine is compiled with profile-guided optimization (`-fprofile-generate`/`-fprofile-use`) trained during `build.sh` on an ephemeral scratch database against the challenge schema.
 
 ## Verification & Benchmarks
 
