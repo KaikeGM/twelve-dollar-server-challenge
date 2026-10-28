@@ -122,7 +122,10 @@ func serve(host, portStr string, d *db, secret string) error {
 
 	softMax := max(nofile-4096, nofile*7/8)
 	hardMax := max(nofile-256, nofile*15/16)
-	if nofile <= 1024 {
+	if nofile >= 65535 {
+		softMax = 58000
+		hardMax = 62000
+	} else if nofile <= 1024 {
 		softMax = nofile - 128
 		hardMax = nofile - 64
 	}
@@ -166,14 +169,19 @@ func serve(host, portStr string, d *db, secret string) error {
 		s.nowSec = now.Unix()
 		s.nowMs = now.UnixMilli()
 
+		if s.openConns > s.softMaxFDs {
+			s.evictIdle(512, false)
+		}
+
 		s.db.resetBatch()
 		s.batch = s.batch[:0]
 
+		hasListen := false
 		for i := 0; i < n; i++ {
 			ev := &s.events[i]
 			fd := int(ev.Fd)
 			if fd == lfd {
-				s.acceptAll()
+				hasListen = true
 				continue
 			}
 			c := &s.conns[fd]
@@ -186,6 +194,10 @@ func serve(host, portStr string, d *db, secret string) error {
 			if c.open && c.writable && ev.Events&syscall.EPOLLOUT != 0 {
 				s.flushConn(fd, c)
 			}
+		}
+
+		if hasListen {
+			s.acceptAll()
 		}
 
 		if len(s.batch) > 0 {
@@ -308,8 +320,12 @@ func (s *server) evictIdle(maxCount int, force bool) int {
 
 func (s *server) acceptAll() {
 	for {
-		if s.openConns >= s.hardMaxFDs {
-			if s.evictIdle(64, false) == 0 && s.evictIdle(16, true) == 0 {
+		for s.openConns >= s.hardMaxFDs {
+			freed := s.evictIdle(512, false)
+			if freed == 0 {
+				freed = s.evictIdle(2048, true)
+			}
+			if freed == 0 {
 				s.pauseListener()
 				return
 			}
@@ -323,10 +339,15 @@ func (s *server) acceptAll() {
 		case syscall.EINTR, syscall.ECONNABORTED, syscall.EPROTO:
 			continue
 		case syscall.EMFILE, syscall.ENFILE, syscall.ENOBUFS, syscall.ENOMEM:
-			if s.evictIdle(64, false) == 0 && s.evictIdle(16, true) == 0 {
-				s.pauseListener()
+			freed := s.evictIdle(512, false)
+			if freed == 0 {
+				freed = s.evictIdle(2048, true)
 			}
-			return
+			if freed == 0 {
+				s.pauseListener()
+				return
+			}
+			continue
 		default:
 			return
 		}
