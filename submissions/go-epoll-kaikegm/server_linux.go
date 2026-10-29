@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"os"
 	"runtime"
 	"strconv"
 	"syscall"
@@ -81,6 +82,7 @@ type server struct {
 	textScratch []byte
 	keyScratch  []byte
 	batch       []batchItem
+	governor    *MLGovernor
 }
 
 type cpuSet [16]uintptr // 128 bytes (1024 bits cpu_set_t)
@@ -130,7 +132,22 @@ func serve(host, portStr string, d *db, secret string) error {
 		hardMax = nofile - 64
 	}
 
+	if v := os.Getenv("SOFT_MAX_FDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			softMax = n
+		}
+	}
+	if v := os.Getenv("HARD_MAX_FDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			hardMax = n
+		}
+	}
+
 	now := time.Now()
+	var gov *MLGovernor
+	if os.Getenv("ML_GOVERNOR") == "1" || os.Getenv("ML_GOVERNOR") == "true" {
+		gov = NewMLGovernor()
+	}
 	s := &server{
 		db:          d,
 		jwt:         newVerifier(secret),
@@ -149,6 +166,7 @@ func serve(host, portStr string, d *db, secret string) error {
 		textScratch: make([]byte, 0, 16<<10),
 		keyScratch:  make([]byte, 0, 256),
 		batch:       make([]batchItem, 0, maxBatchOps),
+		governor:    gov,
 	}
 	for i := range s.conns {
 		s.conns[i].prev = -1
@@ -200,8 +218,44 @@ func serve(host, portStr string, d *db, secret string) error {
 			s.acceptAll()
 		}
 
+		didDrainExtra := false
+		gotExtra := false
+		if s.governor != nil && len(s.batch) > 0 && s.governor.ShouldDrainExtra(len(s.batch), s.openConns, s.softMaxFDs) && s.db.nOps < maxBatchOps {
+			didDrainExtra = true
+			nExtra, _ := syscall.EpollWait(epfd, s.events, 0)
+			if nExtra > 0 {
+				gotExtra = true
+				for i := 0; i < nExtra; i++ {
+					ev := &s.events[i]
+					fd := int(ev.Fd)
+					if fd == lfd {
+						hasListen = true
+						continue
+					}
+					c := &s.conns[fd]
+					if !c.open {
+						continue
+					}
+					if ev.Events&(syscall.EPOLLIN|syscall.EPOLLHUP|syscall.EPOLLERR) != 0 {
+						s.readConn(fd, c)
+					}
+					if c.open && c.writable && ev.Events&syscall.EPOLLOUT != 0 {
+						s.flushConn(fd, c)
+					}
+				}
+				if hasListen {
+					s.acceptAll()
+				}
+			}
+		}
+
 		if len(s.batch) > 0 {
+			t0 := time.Now()
+			bLen := len(s.batch)
 			s.finishBatch()
+			if s.governor != nil {
+				s.governor.Update(bLen, s.openConns, s.softMaxFDs, time.Since(t0), didDrainExtra, gotExtra)
+			}
 		}
 
 		if !s.listening && s.openConns < s.hardMaxFDs {
@@ -305,12 +359,16 @@ func (s *server) evictIdle(maxCount int, force bool) int {
 	scanned := 0
 	limit := s.openConns
 	cur := s.lruHead
+	grace := int64(idleGraceMs)
+	if s.governor != nil {
+		grace = s.governor.PredictGraceMs(s.openConns, s.softMaxFDs, s.hardMaxFDs)
+	}
 	for cur >= 0 && evicted < maxCount && scanned < limit {
 		scanned++
 		c := &s.conns[cur]
 		next := c.next
 		if len(c.in) == 0 && !c.writable && !c.closing {
-			if force || (s.nowMs-c.lastMs) >= idleGraceMs {
+			if force || (s.nowMs-c.lastMs) >= grace {
 				s.closeConn(int(cur))
 				evicted++
 			} else {
