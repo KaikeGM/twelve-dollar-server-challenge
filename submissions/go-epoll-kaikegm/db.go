@@ -20,12 +20,12 @@ const (
 	opCreatePost = C.OP_CREATE_POST
 	opLikePost   = C.OP_LIKE_POST
 
-	maxBatchOps = 2048
+	maxBatchOps = 256
 	reqArenaCap = 2 << 20
 	outArenaCap = 16 << 20
 )
 
-var pragmas = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA mmap_size = 1073741824; PRAGMA cache_size = -16384; PRAGMA temp_store = MEMORY;"
+var pragmas = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA mmap_size = 268435456; PRAGMA cache_size = -2000; PRAGMA temp_store = MEMORY; PRAGMA read_uncommitted = 1;"
 
 type db struct {
 	ctx    *C.db_ctx

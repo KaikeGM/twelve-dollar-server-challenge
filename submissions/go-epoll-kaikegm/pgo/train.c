@@ -29,9 +29,10 @@ int main(int argc, char **argv) {
         "PRAGMA journal_mode = WAL;"
         "PRAGMA synchronous = NORMAL;"
         "PRAGMA foreign_keys = ON;"
-        "PRAGMA mmap_size = 1073741824;"
+        "PRAGMA mmap_size = 268435456;"
         "PRAGMA cache_size = -2000;"
-        "PRAGMA temp_store = MEMORY;";
+        "PRAGMA temp_store = MEMORY;"
+        "PRAGMA read_uncommitted = 1;";
 
     char *err = NULL;
     db_ctx *ctx = db_init(argv[1], pragmas, 64, 65536, 1048576, &err);
