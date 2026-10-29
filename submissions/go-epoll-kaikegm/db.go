@@ -20,7 +20,7 @@ const (
 	opCreatePost = C.OP_CREATE_POST
 	opLikePost   = C.OP_LIKE_POST
 
-	maxBatchOps = 256
+	maxBatchOps = 2048
 	reqArenaCap = 2 << 20
 	outArenaCap = 16 << 20
 )
